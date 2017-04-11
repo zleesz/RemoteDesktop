@@ -44,6 +44,15 @@ CClientConnection::CClientConnection(struct event_base* base, SOCKET socket, buf
 
 CClientConnection::~CClientConnection(void)
 {
+	m_lockCommandQueue.Lock();
+	tool.Log(_T("CClientConnection::~CClientConnection, m_queueAsynCommand.size:%d"), m_queueAsynCommand.size());
+	while (m_queueAsynCommand.size() > 0)
+	{
+		CommandBase* pCommand = m_queueAsynCommand.front();
+		pCommand->Release();
+		m_queueAsynCommand.pop();
+	}
+	m_lockCommandQueue.Unlock();
 	if (m_pCompress)
 	{
 		delete m_pCompress;
@@ -423,9 +432,9 @@ void CClientConnection::OnReciveCommand(CommandData* pCommand)
 	}
 }
 
-void CClientConnection::OnError(short events)
+void CClientConnection::OnError(RD_ERROR_CODE errorCode)
 {
-	tool.Log(_T("CClientConnection::OnError, events:%d"), events);
+	tool.Log(_T("CClientConnection::OnError, events:%d"), errorCode);
 	m_state = RDCS_DISCONNECTED;
 
 	m_bufferev = NULL;

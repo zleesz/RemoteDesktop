@@ -85,16 +85,16 @@ void CRemoteServer::conn_errorcb(struct bufferevent* bev, short events, void* us
 	}
 	if (pThis)
 	{
+		CAutoAddReleasePtr<CClientConnection> spClientConnection;
 		pThis->m_lockClient.Lock();
 		MapBufferEvent::iterator it = pThis->m_mapClient.find(bev);
 		if (it != pThis->m_mapClient.end())
 		{
-			CClientConnection* pClientConnection = it->second;
+			spClientConnection = it->second;
 			pThis->m_mapClient.erase(it);
-			pClientConnection->OnError(events);
-			pClientConnection->Release();
 		}
 		pThis->m_lockClient.Unlock();
+		pThis->SendMessage(WM_REMOTESERVER_ONCLIENTDISCONNECTED, (WPARAM)(spClientConnection.p), (LPARAM)events);
 	}
 	bufferevent_free(bev);
 }
@@ -400,6 +400,10 @@ LRESULT CRemoteServer::OnClientDisconnected(UINT /*uMsg*/, WPARAM wParam, LPARAM
 	CAutoAddReleasePtr<CClientConnection> spClientConnection = (CClientConnection*)wParam;
 	tool.Log(_T("CRemoteServer::OnClientDisconnected pClient:0x%08X"), spClientConnection);
 	RD_ERROR_CODE errorCode = (RD_ERROR_CODE)lParam;
+	if (errorCode != RDEC_SUCCEEDED)
+	{
+		spClientConnection->OnError(errorCode);
+	}
 	if (m_pRemoteServerEvent)
 	{
 		m_pRemoteServerEvent->OnDisconnect(spClientConnection, errorCode);

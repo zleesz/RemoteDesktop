@@ -55,7 +55,7 @@ public:
 
 	void OnConnect();
 	void OnReciveCommand(CommandData* pCommand);
-	void OnError(short events);
+	void OnError(RD_ERROR_CODE errorCode);
 	void OnWrite();
 
 	void OnScreenFirstBitmap(BitmapInfo* pBitmapInfo, WORD wPixelBytes, unsigned char *bitmapBits);

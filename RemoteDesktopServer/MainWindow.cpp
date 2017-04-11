@@ -80,7 +80,7 @@ LRESULT CMainWindow::OnPaint(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/
 {
 	PAINTSTRUCT ps;
 	HDC hDC = ::BeginPaint(m_hWnd, &ps);
-/*
+
 	CRect rcClient;
 	GetClientRect(&rcClient);
 	HDC hMemDC = ::CreateCompatibleDC(hDC);
@@ -101,7 +101,7 @@ LRESULT CMainWindow::OnPaint(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/
 	::SelectObject(hMemDC, hOldBmp);
 	::DeleteObject(hMemBmp);
 	::DeleteDC(hMemDC);
-*/
+
 	::EndPaint(m_hWnd, &ps);
 	return 0;
 }

@@ -95,13 +95,6 @@ void CScreenBitmap::StartCapture(IScreenBitmapEvent* pScreenBitmapEvent)
 void CScreenBitmap::StopCapture()
 {
 	tool.Log(_T("CScreenBitmap::StopCapture"));
-	m_lock.Lock();
-	if (m_pBuffer)
-	{
-		delete[] m_pBuffer;
-		m_pBuffer = NULL;
-	}
-	m_lock.Unlock();
 	if (m_uThreadId != 0)
 	{
 		PostThreadMessage(m_uThreadId, WM_CLOSE, 0, 0);
@@ -109,6 +102,13 @@ void CScreenBitmap::StopCapture()
 		KillTimer(CAPTURE_DESKTOP_TIMERID);
 		DestroyWindow();
 	}
+	m_lock.Lock();
+	if (m_pBuffer)
+	{
+		delete[] m_pBuffer;
+		m_pBuffer = NULL;
+	}
+	m_lock.Unlock();
 	m_pScreenBitmapEvent = NULL;
 	::SetRectEmpty(&m_rcScreen);
 }
@@ -208,7 +208,7 @@ void CScreenBitmap::CaptureDesktop()
 	m_BitmapInfo = bitmapInfo;
 	m_lock.Unlock();
 
-	if (pLastBuffer)
+	if (m_hWnd && pLastBuffer)
 	{
 		unsigned int nModifiedBlockCount = 0;
 		unsigned int* pnModifiedBlocks = NULL;
@@ -224,8 +224,12 @@ void CScreenBitmap::CaptureDesktop()
 			//Util::SaveBitmap(m_rcScreen.Height(), m_rcScreen.Width(), m_wPixelBytes, pNewBuffer, _T("E:\\workspaces\\GitHub\\RemoteDesktop\\Debug\\new.bmp"));
 			PostMessage(WM_SCREENBITMAP_MODIFIED, (WPARAM)nModifiedBlockCount, (LPARAM)pnModifiedBlocks);
 		}
+		else if (pnModifiedBlocks != NULL)
+		{
+			delete[] pnModifiedBlocks;
+		}
 	}
-	else
+	else if (m_hWnd)
 	{
 		m_lock.Lock();
 		m_pBuffer = pNewBuffer;
