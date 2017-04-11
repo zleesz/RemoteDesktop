@@ -9,8 +9,6 @@
 #define new DEBUG_NEW
 #endif
 
-static const int PORT = 9995;
-
 CRemoteServer::CRemoteServer(void) : m_pEventBase(NULL), m_hThread(NULL), m_pRemoteServerEvent(NULL)
 {
 	InitCommandData();
@@ -180,8 +178,8 @@ unsigned __stdcall CRemoteServer::DoStart(void* pParam)
 
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
-	sin.sin_port = htons(PORT);
-	sin.sin_addr.s_addr = inet_addr("192.168.104.29");
+	sin.sin_port = htons(RD_REMOTE_SERVER_PORT);
+	sin.sin_addr.s_addr = inet_addr(RD_REMOTE_SERVER_HOST);
 
 	// 基于eventbase 生成listen描述符并绑定
 	// 设置了listener_cb回调函数，当有新的连接登录的时候

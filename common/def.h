@@ -2,6 +2,8 @@
 #include <string>
 
 #define RD_PROTOCAL_VERSION "1.0"
+#define RD_REMOTE_SERVER_PORT 6600
+#define RD_REMOTE_SERVER_HOST "192.168.104.30"
 
 #define CMD_ITEM_SIZE_MAX 10485760 // 10M
 
@@ -75,5 +77,5 @@ typedef struct CommandData
 #define BITMAP_SUFFIX_BMP ".bmp"
 #define BITMAP_SUFFIX_JPEG ".jpg"
 
-#define SCAN_MODIFY_RECT_UNIT		16	// 每32个像素扫描
+#define SCAN_MODIFY_RECT_UNIT		32	// 每32个像素扫描
 #define CAPTURE_DESKTOP_FRAME		200

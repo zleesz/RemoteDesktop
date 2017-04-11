@@ -54,12 +54,11 @@ unsigned __stdcall CRemoteClient::DoConnect(void* pParam)
 	CRemoteClient* pThis = (CRemoteClient*)pParam;
 
 	// build socket
-	USHORT port = 9995;
 	struct sockaddr_in sin;
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = inet_addr("192.168.104.29");
-	sin.sin_port = htons(port);
+	sin.sin_addr.s_addr = inet_addr(RD_REMOTE_SERVER_HOST);
+	sin.sin_port = htons(RD_REMOTE_SERVER_PORT);
 
 	// build event base
 	pThis->m_pEventBase = event_base_new();
