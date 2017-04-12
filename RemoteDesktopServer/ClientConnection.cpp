@@ -80,7 +80,7 @@ RD_CONNECTION_STATE CClientConnection::GetState() const
 	return m_state;
 }
 
-void CClientConnection::OnAsynSendCommand(evutil_socket_t fd, short event, void* arg)
+void CClientConnection::OnAsynSendCommand(evutil_socket_t /*fd*/, short /*event*/, void* arg)
 {
 	CAutoAddReleasePtr<CClientConnection> spThis((CClientConnection*)arg);
 	spThis->m_lockCommandQueue.Lock();
@@ -207,7 +207,6 @@ int CClientConnection::AsynSendTransterModifyBitmap()
 	ZeroMemory(pBuffer, nBufferSize * sizeof(unsigned char));
 
 	tool.Log(_T("CClientConnection::AsynSendTransterModifyBitmap 22"));
-	CRect rcOneModified;
 	for (unsigned int i = 0; i < m_nModifiedBlockCount; i++)
 	{
 		unsigned int nBlockIndex = m_pnModifiedBlocks[i];
@@ -215,6 +214,7 @@ int CClientConnection::AsynSendTransterModifyBitmap()
 		unsigned int nBlockRow = nBlockIndex / m_nScanPointColumnCount;
 		unsigned int nBlockColumn = nBlockIndex % m_nScanPointColumnCount;
 
+		CRect rcOneModified;
 		rcOneModified.left = nBlockColumn * SCAN_MODIFY_RECT_UNIT;
 		rcOneModified.top = nBlockRow * SCAN_MODIFY_RECT_UNIT;
 		rcOneModified.right = (nBlockColumn == m_nScanPointColumnCount - 1) ? rcScreen.Width() : (rcOneModified.left + SCAN_MODIFY_RECT_UNIT);

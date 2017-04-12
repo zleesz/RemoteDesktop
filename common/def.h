@@ -78,4 +78,4 @@ typedef struct CommandData
 #define BITMAP_SUFFIX_JPEG ".jpg"
 
 #define SCAN_MODIFY_RECT_UNIT		32	// Ã¿32¸öÏñËØÉ¨Ãè
-#define CAPTURE_DESKTOP_FRAME		200
+#define CAPTURE_DESKTOP_FRAME		150
