@@ -6,11 +6,11 @@ class CAddReleaseRef
 public:
 	CAddReleaseRef() : m_dwRef(0) {}
 	virtual ~CAddReleaseRef() {}
-	ULONG AddRef()
+	virtual ULONG AddRef()
 	{
 		return InterlockedIncrement((LONG*)&m_dwRef);
 	}
-	ULONG Release()
+	virtual ULONG Release()
 	{
 		long l = InterlockedDecrement((LONG*)&m_dwRef);
 		if (l == 0)

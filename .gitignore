@@ -45,3 +45,19 @@ $RECYCLE.BIN/
 Network Trash Folder
 Temporary Items
 .apdisk
+*.ncb
+*.obj
+*.pdb
+*.ilk
+*.lib
+*.exe
+*.idb
+*.pch
+*.dep
+*.manifest
+*.res
+*.user
+*RemoteDesktop.suo
+*.rsp
+*BuildLog.htm
+*.aps

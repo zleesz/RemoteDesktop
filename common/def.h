@@ -2,8 +2,16 @@
 #include <string>
 
 #define RD_PROTOCAL_VERSION "1.0"
-#define RD_REMOTE_SERVER_PORT 6600
-#define RD_REMOTE_SERVER_HOST "192.168.104.29"
+#define RD_REMOTE_P2PTRACKER_SERVER_PORT 80
+#define RD_REMOTE_P2PTRACKER_SERVER_HOST "150759bc.nat123.cc"
+#define RD_REMOTE_P2PDIG_HTTPSERVER_PORT 6600
+
+// (default)    
+#define HTTP_CONTENT_TYPE_URL_ENCODED   "application/x-www-form-urlencoded"       
+// (use for files: picture, mp3, tar-file etc.)                                            
+#define HTTP_CONTENT_TYPE_FORM_DATA     "multipart/form-data"                     
+// (use for plain text)    
+#define HTTP_CONTENT_TYPE_TEXT_PLAIN    "text/plain"
 
 #define CMD_ITEM_SIZE_MAX 10485760 // 10M
 
@@ -78,4 +86,54 @@ typedef struct CommandData
 #define BITMAP_SUFFIX_JPEG ".jpg"
 
 #define SCAN_MODIFY_RECT_UNIT		32	// 每32个像素扫描
-#define CAPTURE_DESKTOP_FRAME		150
+#define CAPTURE_DESKTOP_FRAME		150	// 帧间隔ms
+
+typedef struct PeerInfo
+{
+	std::string		ip;
+	unsigned short	tcp_port;
+#ifdef __cplusplus
+	struct PeerInfo() : tcp_port(0)
+	{
+	}
+	struct PeerInfo(const char* pip, unsigned short port) : ip(pip), tcp_port(port)
+	{
+	}
+	struct PeerInfo(std::string& strip, unsigned short port) : ip(strip), tcp_port(port)
+	{
+	}
+	struct PeerInfo(const struct PeerInfo& p)
+	{
+		ip = p.ip;
+		tcp_port = p.tcp_port;
+	}
+	bool operator == (const struct PeerInfo& p) const
+	{
+		return ip == p.ip && tcp_port == tcp_port;
+	}
+	bool operator < (const struct PeerInfo& peer2) const
+	{
+		return ip < peer2.ip;
+	}
+	bool operator > (const struct PeerInfo& peer2) const
+	{
+		return ip > peer2.ip;
+	}
+#endif
+}PeerInfo;
+
+typedef enum RD_PEER_STATE
+{
+	RDPS_INVALID		= 0,
+	RDPS_ONLINE			= 1,
+	RDPS_PING_OFFLINE	= 2,
+	RDPS_OFFLINE		= 3,
+}RD_PEER_STATE;
+
+#define RD_P2PTRACKER_PEER_HOLD_TIME 30000 // peer每30秒要上报下在线状态
+
+
+#define	TAILQ_INIT(head) do {				\
+	(head)->tqh_first = NULL;				\
+	(head)->tqh_last = &(head)->tqh_first;	\
+	} while (0)

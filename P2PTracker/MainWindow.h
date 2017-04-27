@@ -1,9 +1,11 @@
 #pragma once
 #include <atlwin.h>
 #include <atltypes.h>
+#include "TrackerHttpServer.h"
 
 class CMainWindow :
-	public CWindowImpl<CMainWindow>
+	public CWindowImpl<CMainWindow>,
+	public ITrackerEvent
 {
 public:
 	CMainWindow(void);
@@ -24,8 +26,14 @@ protected:
 	LRESULT OnEraseBackground(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 	LRESULT OnPaint(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 
+	virtual void OnPeerAvailable(const char* peer, unsigned short port);
+	virtual void OnPeerLive(const char* peer, unsigned short port);
+	virtual void OnPeerOffline(const char* peer, unsigned short port);
+
 public:
 	HWND Create(CRect& rcBound, int nCmdShow);
 	void Destroy();
 
+private:
+	CTrackerHttpServer* m_pTrackerHttpServer;
 };

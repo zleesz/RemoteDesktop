@@ -361,10 +361,6 @@ bool CClientConnection::IsValid() const
 	{
 		return false;
 	}
-	if (m_strIp.length() <= 0 || m_uPort <= 0)
-	{
-		return false;
-	}
 	return true;
 }
 

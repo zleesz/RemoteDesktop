@@ -42,6 +42,6 @@ public:
 	virtual void OnModified(unsigned int nModifiedBlockCount, unsigned int* pnModifiedBlocks);
 
 private:
-	CRemoteServer						m_server;
+	CRemoteServer						m_RemoteServer;
 	CAutoAddReleasePtr<CScreenBitmap>	m_spScreenBitmap;
 };

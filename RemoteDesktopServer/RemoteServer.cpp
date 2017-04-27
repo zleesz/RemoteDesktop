@@ -9,6 +9,9 @@
 #define new DEBUG_NEW
 #endif
 
+#define TIMERID_P2PTRACKER_PEER_HOLD		0
+#define TIMERID_PEER_CONNECTING_DELAY_CLOSE	1
+
 CRemoteServer::CRemoteServer(void) : m_pEventBase(NULL), m_hThread(NULL), m_pRemoteServerEvent(NULL)
 {
 	InitCommandData();
@@ -51,7 +54,6 @@ void CRemoteServer::conn_readcb(struct bufferevent *bev, void *user_data)
 	pThis->m_lockClient.Unlock();
 	if (pClientConnection == NULL)
 	{
-		pClientConnection->Release();
 		return;
 	}
 
@@ -71,9 +73,9 @@ void CRemoteServer::conn_readcb(struct bufferevent *bev, void *user_data)
 	pClientConnection->Release();
 }
 
-void CRemoteServer::conn_errorcb(struct bufferevent* bev, short events, void* user_data)
+void CRemoteServer::conn_eventcb(struct bufferevent* bev, short events, void* user_data)
 {
-	tool.Log(_T("CRemoteServer::conn_errorcb bev:0x%08X, events:%d"), bev, events);
+	tool.Log(_T("CRemoteServer::conn_eventcb bev:0x%08X, events:%d"), bev, events);
 	CRemoteServer* pThis = (CRemoteServer*)user_data;
 	if (events & BEV_EVENT_EOF)
 	{
@@ -82,6 +84,10 @@ void CRemoteServer::conn_errorcb(struct bufferevent* bev, short events, void* us
 	else if (events & BEV_EVENT_ERROR)
 	{
 		tool.Log(_T("Got an error on the connection: %s"), _tcserror(errno));
+	}
+	else
+	{
+		return;
 	}
 	if (pThis)
 	{
@@ -110,13 +116,13 @@ void CRemoteServer::listener_cb(struct evconnlistener* /*listener*/, evutil_sock
 	tool.Log(_T("bev:0x%08X"), bev);
 	if (!bev) 
 	{
-		tool.Log(_T("Error constructing bufferevent!"));
+		tool.Log(_T("CRemoteServer::listener_cb Error constructing bufferevent!"));
 		return;
 	}
 	CAutoAddReleasePtr<CClientConnection> spClientConnection = new CClientConnection(base, fd, bev, pThis);
 	if (spClientConnection == NULL || !spClientConnection->IsValid())
 	{
-		tool.Log(_T("Error new CClientConnection is not valid!"));
+		tool.Log(_T("CRemoteServer::listener_cb Error new CClientConnection is not valid!"));
 		bufferevent_free(bev);
 		return;
 	}
@@ -141,23 +147,26 @@ void CRemoteServer::listener_cb(struct evconnlistener* /*listener*/, evutil_sock
 	}
 	else
 	{
-		tool.Log(_T("Error already connect! ip : %s"), spClientConnection->GetIp().c_str());
+		tool.LogA("CRemoteServer::listener_cb Error already connect! ip : %s", spClientConnection->GetIp().c_str());
 		bufferevent_free(bev);
 		return;
 	}
 
 	evutil_make_socket_nonblocking(fd);
-	bufferevent_setcb(bev, conn_readcb, conn_writecb, conn_errorcb, user_data);
+	bufferevent_setcb(bev, conn_readcb, conn_writecb, conn_eventcb, user_data);
 	bufferevent_enable(bev, EV_WRITE | EV_READ);
 	pThis->SendMessage(WM_REMOTESERVER_ONCLIENTCONNECTED, (WPARAM)(spClientConnection.p), 0);
 }
 
-void CRemoteServer::accept_error_cb(struct evconnlistener* listener, void* /*ctx*/)
+void CRemoteServer::accept_error_cb(struct evconnlistener* listener, void* pParam)
 {
+	CRemoteServer* pThis = (CRemoteServer*)pParam;
 	struct event_base *base = evconnlistener_get_base(listener);
 	int err = EVUTIL_SOCKET_ERROR();
-	tool.LogA("Got an error %d (%s) on the listener. Shutting down.", err, evutil_socket_error_to_string(err));
+	tool.LogA("Got an error %d (%s) on the listener.", err, evutil_socket_error_to_string(err));
 
+	pThis->m_P2PTrackerClient.SendOffline();
+	pThis->m_P2PTrackerClient.Uninit();
 	event_base_loopexit(base, NULL);
 }
 
@@ -165,9 +174,6 @@ unsigned __stdcall CRemoteServer::DoStart(void* pParam)
 {
 	tool.Log(_T("CRemoteServer::DoStart pParam:0x%08X"), pParam);
 	CRemoteServer* pThis = (CRemoteServer*)pParam;
-	struct evconnlistener *listener = NULL;
-
-	struct sockaddr_in sin;
 	//创建event_base
 	pThis->m_pEventBase = event_base_new();
 	if (!pThis->m_pEventBase) 
@@ -176,30 +182,17 @@ unsigned __stdcall CRemoteServer::DoStart(void* pParam)
 		return 1;
 	}
 
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_family = AF_INET;
-	sin.sin_port = htons(RD_REMOTE_SERVER_PORT);
-	sin.sin_addr.s_addr = inet_addr(RD_REMOTE_SERVER_HOST);
-
-	// 基于eventbase 生成listen描述符并绑定
-	// 设置了listener_cb回调函数，当有新的连接登录的时候
-	// 触发listener_cb
-	listener = evconnlistener_new_bind(pThis->m_pEventBase, listener_cb, (void *)pThis, LEV_OPT_REUSEABLE | LEV_OPT_CLOSE_ON_FREE | LEV_OPT_THREADSAFE, -1, (struct sockaddr*)&sin, sizeof(sin));
-
-	if (!listener)
+	// 先连接Tracker服务器，得到本地端口，再在这个端口上监听
+	bool bInit = pThis->m_P2PTrackerClient.Init(pThis, pThis->m_pEventBase);
+	if (bInit)
 	{
-		tool.Log(_T("Could not create a listener!"));
-		return 2;
+		bool bTrack = pThis->m_P2PTrackerClient.SendOnline();
+		if (bTrack)
+		{
+			event_base_dispatch(pThis->m_pEventBase);
+		}
 	}
 
-	/* 设置Listen错误回调函数 */
-	evconnlistener_set_error_cb(listener, accept_error_cb);
-
-	pThis->SendMessage(WM_REMOTESERVER_ONSERVERSTARTED, 0, 0);
-
-	event_base_dispatch(pThis->m_pEventBase);
-
-	evconnlistener_free(listener);
 	event_base_free(pThis->m_pEventBase);
 	pThis->m_pEventBase = NULL;
 	pThis->SendMessage(WM_REMOTESERVER_ONSERVERSTOPPED, 0, 0);
@@ -240,6 +233,13 @@ void CRemoteServer::Stop()
 	m_lockClient.Unlock();
 	if (m_pEventBase)
 	{
+		m_P2PTrackerClient.SendOffline();
+		m_P2PTrackerClient.Uninit();
+		if (m_hWnd)
+		{
+			KillTimer(TIMERID_P2PTRACKER_PEER_HOLD);
+			KillTimer(TIMERID_PEER_CONNECTING_DELAY_CLOSE);
+		}
 		event_base_loopexit(m_pEventBase, NULL);
 	}
 	if (m_hWnd)
@@ -429,4 +429,112 @@ LRESULT CRemoteServer::OnServerStopped(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM 
 		m_pRemoteServerEvent->OnStop();
 	}
 	return 0;
+}
+
+LRESULT CRemoteServer::OnTimer(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
+{
+	if (wParam == TIMERID_P2PTRACKER_PEER_HOLD)
+	{
+		m_P2PTrackerClient.SendPing();
+	}
+	else if (wParam == TIMERID_PEER_CONNECTING_DELAY_CLOSE)
+	{
+	}
+	return 0;
+}
+
+// 连接tracker服务器成功
+void CRemoteServer::OnServerConnectSuccess(unsigned short tcp_port)
+{
+	tool.Log(_T("CRemoteServer::OnServerConnectSuccess tcp_port:%u"), tcp_port);
+	struct sockaddr_in sin;
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_port = tcp_port;
+	sin.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+	struct evconnlistener* listener = evconnlistener_new_bind(m_pEventBase, listener_cb, (void*)this, LEV_OPT_REUSEABLE | LEV_OPT_CLOSE_ON_FREE | LEV_OPT_THREADSAFE, -1, (struct sockaddr*)&sin, sizeof(sin));
+
+	if (!listener)
+	{
+		tool.Log(_T("Could not create a listener!"));
+		return;
+	}
+
+	evconnlistener_set_error_cb(listener, accept_error_cb);
+
+	SendMessage(WM_REMOTESERVER_ONSERVERSTARTED, 0, 0);
+	SetTimer(TIMERID_P2PTRACKER_PEER_HOLD, RD_P2PTRACKER_PEER_HOLD_TIME);
+}
+
+// 连接tracker服务器失败
+void CRemoteServer::OnServerConnectFailed()
+{
+	tool.Log(_T("CRemoteServer::OnServerConnectFailed!"));
+	if (m_pEventBase)
+	{
+		event_base_loopexit(m_pEventBase, NULL);
+	}
+}
+
+// 与tracker服务器断开连接
+void CRemoteServer::OnServerDisconnect()
+{
+	tool.Log(_T("CRemoteServer::OnServerDisconnect!"));
+	KillTimer(0);
+}
+
+static void conn_writecb2(struct bufferevent *bev, void *user_data)
+{
+	tool.Log(_T("CRemoteServer::conn_writecb2 bev:0x%08X"), bev);
+	evbuffer* output = bufferevent_get_output(bev);
+	int length = evbuffer_get_length(output);
+	tool.Log(_T("CRemoteServer::conn_writecb2 length:%d"), length);
+}
+
+static void conn_readcb2(struct bufferevent *bev, void *user_data)
+{
+	tool.Log(_T("CRemoteServer::conn_readcb2 bev:0x%08X"), bev);
+}
+
+static void conn_eventcb2(struct bufferevent *bev, short events, void *user_data)
+{
+	tool.Log(_T("CRemoteServer::conn_eventcb2 bev:0x%08X, events:%d"), bev, events);
+	CRemoteServer* pThis = (CRemoteServer*)user_data;
+	if (events & BEV_EVENT_EOF)
+	{
+		tool.Log(_T("CRemoteServer::conn_eventcb2 Connection closed."));
+	}
+	else if (events & BEV_EVENT_ERROR)
+	{
+		tool.Log(_T("CRemoteServer::conn_eventcb2 Got an error on the connection: %s"), _tcserror(errno));
+	}
+}
+
+bool CRemoteServer::OnPeerConnecting(PeerInfo& peer)
+{
+	tool.LogA("CRemoteServer::OnPeerConnecting ip:%s, port:%u", peer.ip.c_str(), peer.tcp_port);
+	struct sockaddr_in sin;
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = inet_addr(peer.ip.c_str());
+	sin.sin_port = htons(peer.tcp_port);
+
+	struct bufferevent* pBufferEvent = bufferevent_socket_new(m_pEventBase, -1, BEV_OPT_CLOSE_ON_FREE | LEV_OPT_THREADSAFE);
+	bufferevent_setcb(pBufferEvent, conn_readcb2, conn_writecb2, conn_eventcb2, this);
+	bufferevent_enable(pBufferEvent, EV_WRITE | EV_READ);
+	if (bufferevent_socket_connect(pBufferEvent, (struct sockaddr*)&sin, sizeof(sin)) == 0)
+	{
+		tool.LogA("bufferevent_socket_connect success.");
+		std::string strInvalidMessage("invalid message.");
+		bufferevent_write(pBufferEvent, strInvalidMessage.c_str(), strInvalidMessage.length());
+
+		SetTimer(TIMERID_PEER_CONNECTING_DELAY_CLOSE, 5000);
+		return true;
+	}
+	else
+	{
+		bufferevent_free(pBufferEvent);
+		return false;
+	}
 }

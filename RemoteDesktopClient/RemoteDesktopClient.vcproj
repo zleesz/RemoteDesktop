@@ -218,6 +218,10 @@
 				</FileConfiguration>
 			</File>
 			<File
+				RelativePath=".\P2PTrackerClient.cpp"
+				>
+			</File>
+			<File
 				RelativePath=".\RemoteClient.cpp"
 				>
 				<FileConfiguration
@@ -277,6 +281,10 @@
 			</File>
 			<File
 				RelativePath=".\MainWindow.h"
+				>
+			</File>
+			<File
+				RelativePath=".\P2PTrackerClient.h"
 				>
 			</File>
 			<File

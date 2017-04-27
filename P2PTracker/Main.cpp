@@ -26,7 +26,6 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPTSTR lp
 	tool.Initialize();
 	DWORD dwTime = ::timeGetTime() - dwTimeStart;
 	tool.Log(_T("It takes %d ms for tool initialization."), dwTime);
-	tool.Log(_T(""));
 
 	HRESULT hRes = ::CoInitialize(NULL);
 

@@ -2,7 +2,7 @@
 #include "MainWindow.h"
 #include "resource.h"
 
-CMainWindow::CMainWindow(void)
+CMainWindow::CMainWindow(void) : m_pTrackerHttpServer(NULL)
 {
 }
 
@@ -21,11 +21,17 @@ HWND CMainWindow::Create(CRect& rcBound, int nCmdShow)
 
 	CWindowImpl<CMainWindow>::Create(GetDesktopWindow(), rcBound, NULL, dwStyle, dwStyleEx);
 	ShowWindow(nCmdShow);
+	m_pTrackerHttpServer = CTrackerHttpServer::GetInstance();
+	m_pTrackerHttpServer->AddRef();
+	m_pTrackerHttpServer->Start(this);
 	return m_hWnd;
 }
 
 void CMainWindow::Destroy()
 {
+	m_pTrackerHttpServer->Stop();
+	m_pTrackerHttpServer->Release();
+	m_pTrackerHttpServer = NULL;
 	if (m_hWnd)
 	{
 		DestroyWindow();
@@ -82,4 +88,19 @@ LRESULT CMainWindow::OnPaint(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/
 
 	::EndPaint(m_hWnd, &ps);
 	return 0;
+}
+
+void CMainWindow::OnPeerAvailable(const char* peer, unsigned short port)
+{
+
+}
+
+void CMainWindow::OnPeerLive(const char* peer, unsigned short port)
+{
+
+}
+
+void CMainWindow::OnPeerOffline(const char* peer, unsigned short port)
+{
+
 }

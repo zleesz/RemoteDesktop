@@ -194,6 +194,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\P2PTrackerClient.cpp"
+				>
+			</File>
+			<File
 				RelativePath=".\ProcessWindowHooks.cpp"
 				>
 			</File>
@@ -245,6 +249,10 @@
 			</File>
 			<File
 				RelativePath=".\MainWindow.h"
+				>
+			</File>
+			<File
+				RelativePath=".\P2PTrackerClient.h"
 				>
 			</File>
 			<File

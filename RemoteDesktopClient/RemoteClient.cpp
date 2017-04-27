@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "RemoteClient.h"
 #include <iostream>
+#include <string>
 #include "..\common\stream_buffer.h"
 #include "..\common\utils.h"
 #include "..\common\AutoAddReleasePtr.h"
@@ -9,11 +10,12 @@
 CRemoteClient::CRemoteClient(void) : 
 	m_hThread(NULL),
 	m_pEventBase(NULL),
-	m_bufferev(NULL),
+	m_pBufferEvent(NULL),
 	m_pRemoteClientEvent(NULL),
 	m_state(RDCS_INVALID),
 	m_pAsynSendCommandEvent(NULL),
-	m_strSuffix(BITMAP_SUFFIX_JPEG)
+	m_strSuffix(BITMAP_SUFFIX_JPEG),
+	m_ip(INADDR_NONE)
 {
 	InitCommandData();
 	Create(HWND_MESSAGE);
@@ -38,9 +40,8 @@ void CRemoteClient::conn_readcb(struct bufferevent* bev, void* user_data)
 	struct evbuffer* input = bufferevent_get_input(bev);
 	size_t total = evbuffer_get_length(input);
 	if (total <= 0)
-	{
 		return;
-	}
+
 	char* buf = new char[total+1];
 	memset(buf, 0, total+1);
 	evbuffer_remove(input, buf, total);
@@ -48,48 +49,61 @@ void CRemoteClient::conn_readcb(struct bufferevent* bev, void* user_data)
 	delete[] buf;
 }
 
+void CRemoteClient::conn_eventcb(struct bufferevent* bev, short events, void* user_data)
+{
+	tool.Log(_T("CRemoteClient::conn_eventcb bev:0x%08X, events:%d"), bev, events);
+	CRemoteClient* pThis = (CRemoteClient*)user_data;
+	if (events & BEV_EVENT_EOF)
+	{
+		tool.Log(_T("CRemoteClient::conn_eventcb Connection closed."));
+		event_base_loopexit(pThis->m_pEventBase, NULL);
+	}
+	else if (events & BEV_EVENT_ERROR)
+	{
+		tool.Log(_T("CRemoteClient::conn_eventcb lasterror:%d, Got an error on the connection: %s"), ::WSAGetLastError(), _tcserror(errno));
+		event_base_loopexit(pThis->m_pEventBase, NULL);
+	}
+}
+
 unsigned __stdcall CRemoteClient::DoConnect(void* pParam)
 {
 	tool.Log(_T("CRemoteClient::DoConnect"));
 	CRemoteClient* pThis = (CRemoteClient*)pParam;
 
-	// build socket
-	struct sockaddr_in sin;
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = inet_addr(RD_REMOTE_SERVER_HOST);
-	sin.sin_port = htons(RD_REMOTE_SERVER_PORT);
-
-	// build event base
 	pThis->m_pEventBase = event_base_new();
-
-	// set TCP_NODELAY to let data arrive at the server side quickly
-	evutil_socket_t fd;
-	fd = socket(AF_INET, SOCK_STREAM, 0);
-	pThis->m_bufferev = bufferevent_socket_new(pThis->m_pEventBase, fd, BEV_OPT_CLOSE_ON_FREE | LEV_OPT_THREADSAFE);
-	int enable = 1;
-	if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (const char*)&enable, sizeof(enable)) < 0)
-		tool.Log(_T("ERROR: TCP_NODELAY SETTING ERROR!"));
-
-	evutil_make_socket_nonblocking(fd);
-	bufferevent_setcb(pThis->m_bufferev, conn_readcb, conn_writecb, NULL, pParam);
-	bufferevent_enable(pThis->m_bufferev, EV_WRITE | EV_READ);
-
-	if (bufferevent_socket_connect(pThis->m_bufferev, (struct sockaddr*)&sin, sizeof(sin)) == 0)
+	
+	bool bInit = pThis->m_P2PTrackerClient.Init(pThis, pThis->m_pEventBase);
+	if (!bInit)
 	{
-		pThis->m_pAsynSendCommandEvent = event_new(pThis->m_pEventBase, -1, EV_SIGNAL|EV_PERSIST, OnAsynSendCommand, pParam);
-		tool.Log(_T("connect success. m_pAsynSendCommandEvent:0x%08X"), pThis->m_pAsynSendCommandEvent);
+		tool.Log(_T("m_P2PTrackerClient.Init failed!"));
+		event_base_free(pThis->m_pEventBase);
+		pThis->m_pEventBase = NULL;
+		return 1;
+	}
+	bool bGet = pThis->m_P2PTrackerClient.GetLivePeerList();
+	if (!bGet)
+	{
+		tool.Log(_T("m_P2PTrackerClient.GetLivePeerList failed!"));
+		pThis->m_P2PTrackerClient.Uninit();
+		event_base_free(pThis->m_pEventBase);
+		pThis->m_pEventBase = NULL;
+		return 2;
+	}
+	//m_pAsynSendCommandEvent = event_new(m_pEventBase, -1, EV_SIGNAL | EV_PERSIST, OnAsynSendCommand, this);
+	event_base_dispatch(pThis->m_pEventBase);
 
-		pThis->SendMessage(WM_REMOTECLIENT_ONCONNECTED, 0, 0);
-		event_base_dispatch(pThis->m_pEventBase);
-
+	if (pThis->m_pAsynSendCommandEvent)
+	{
 		event_del(pThis->m_pAsynSendCommandEvent);
 		event_free(pThis->m_pAsynSendCommandEvent);
 		pThis->m_pAsynSendCommandEvent = NULL;
 	}
 
-	bufferevent_free(pThis->m_bufferev);
-	pThis->m_bufferev = NULL;
+	if (pThis->m_pBufferEvent)
+	{
+		bufferevent_free(pThis->m_pBufferEvent);
+		pThis->m_pBufferEvent = NULL;
+	}
 	event_base_free(pThis->m_pEventBase);
 	pThis->m_pEventBase = NULL;
 	return 0;
@@ -103,9 +117,7 @@ bool CRemoteClient::Connect(IRemoteClientEvent* pRemoteClientEvent)
 		tool.Log(_T("libevent is already initialized!"));
 		return true;
 	}
-
 	m_pRemoteClientEvent = pRemoteClientEvent;
-
 	unsigned threadID = 0;
 	m_hThread = (HANDLE)_beginthreadex(NULL, 0, &DoConnect, (LPVOID)this, 0, &threadID);
 	CloseHandle(m_hThread);
@@ -204,7 +216,7 @@ RD_CONNECTION_STATE	CRemoteClient::GetState()
 	return m_state;
 }
 
-void CRemoteClient::OnAsynSendCommand(evutil_socket_t fd, short event, void* arg)
+void CRemoteClient::OnAsynSendCommand(evutil_socket_t /*fd*/, short /*event*/, void* arg)
 {
 	tool.Log(_T("CRemoteClient::OnAsynSendCommand"));
 	CRemoteClient* pThis = (CRemoteClient*)arg;
@@ -222,10 +234,10 @@ void CRemoteClient::OnAsynSendCommand(evutil_socket_t fd, short event, void* arg
 
 int CRemoteClient::Send(const void *data, size_t size)
 {
-	if (m_bufferev == NULL)
+	if (m_pBufferEvent == NULL)
 		return -1;
 
-	return bufferevent_write(m_bufferev, data, size);
+	return bufferevent_write(m_pBufferEvent, data, size);
 }
 
 int CRemoteClient::Send(CommandBase* pCommand)
@@ -346,6 +358,55 @@ LRESULT CRemoteClient::OnReciveCommand(UINT /*uMsg*/, WPARAM wParam, LPARAM /*lP
 	return 0;
 }
 
+LRESULT CRemoteClient::OnTimer(UINT /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/, BOOL& /*bHandled*/)
+{
+
+	struct sockaddr_in sin;
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = m_P2PTrackerClient.GetIp(); //inet_addr(peer.ip.c_str());
+	sin.sin_port = htons(m_P2PTrackerClient.GetPort()/*peer.tcp_port*/);
+
+	SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+	sockaddr_in clientAddr;
+	clientAddr.sin_family = AF_INET;
+	clientAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	clientAddr.sin_port = port;
+	if (bind(s, (SOCKADDR*)&clientAddr, sizeof(clientAddr)) == SOCKET_ERROR)
+	{
+		tool.Log(_T("bind failed. lasterror:%d"), ::WSAGetLastError());
+		//event_base_loopexit(m_pEventBase, NULL);
+		closesocket(s);
+		return 0;
+	}
+	evutil_make_listen_socket_reuseable(s);
+	if (connect(s, (struct sockaddr*)&sin, sizeof(sin)) == SOCKET_ERROR)
+	{
+		tool.Log(_T("connect failed. lasterror:%d"), ::WSAGetLastError());
+		//event_base_loopexit(m_pEventBase, NULL);
+		closesocket(s);
+		return 0;
+	}
+	std::string strData;
+	strData += "POST /c HTTP/1.1\r\n";
+	strData += "Content-Length: 3\r\n";
+	strData += "Host: 150759bc.nat123.cc\r\n";
+	strData += "User-Agent: RemoteClient\r\n";
+	strData += "Content-Type: text/plain\r\n";
+	strData += "Connection: Keep-Alive\r\n";
+	strData += "\r\n";
+	strData += "c=g";
+	if (send(s, strData.c_str(), strData.length(), 0) == SOCKET_ERROR)
+	{
+		tool.Log(_T("send failed. lasterror:%d"), ::WSAGetLastError());
+		closesocket(s);
+		//event_base_loopexit(m_pEventBase, NULL);
+		return 0;
+	}
+	KillTimer(wParam);
+	return 0;
+}
+
 void CRemoteClient::GetSuffix(std::string& strSuffix)
 {
 	strSuffix = m_strSuffix;
@@ -399,4 +460,80 @@ void CRemoteClient::OnGetDisconnect(int nDisconnectCode)
 {
 	tool.Log(_T("CRemoteClient::OnGetDisconnect, nDisconnectCode:%d"), nDisconnectCode);
 	m_pRemoteClientEvent->OnGetDisconnect(nDisconnectCode);
+}
+
+void CRemoteClient::OnGetLivePeerList(std::list<PeerInfo>& listPeer)
+{
+	tool.Log(_T("CRemoteClient::OnGetLivePeerList, size:%d"), listPeer.size());
+	if (listPeer.size() > 0)
+	{
+		std::list<PeerInfo>::iterator it = listPeer.begin();
+		ConnectRemoteDesktop(*it);
+	}
+}
+
+void CRemoteClient::OnGetLivePeerFailed()
+{
+	tool.Log(_T("CRemoteClient::OnGetLivePeerFailed."));
+}
+
+bool CRemoteClient::ConnectRemoteDesktop(PeerInfo& peer)
+{
+	tool.LogA("CRemoteClient::ConnectRemoteDesktop ip:%s, port:%u", peer.ip.c_str(), peer.tcp_port);
+	return m_P2PTrackerClient.ConnectPeer(peer);
+}
+
+void CRemoteClient::OnConnectPeerResult(PeerInfo& peer, unsigned short port)
+{
+	tool.LogA("CRemoteClient::OnConnectPeerResult peer=%s:%u, port:%u(%u)", peer.ip.c_str(), peer.tcp_port, port, ntohs(port));
+	m_P2PTrackerClient.CloseClient();
+
+	struct sockaddr_in sin;
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = m_P2PTrackerClient.GetIp(); //inet_addr(peer.ip.c_str());
+	sin.sin_port = htons(m_P2PTrackerClient.GetPort()/*peer.tcp_port*/);
+	SetTimer(0, 100);
+	/*
+	m_pBufferEvent = bufferevent_socket_new(m_pEventBase, -1, BEV_OPT_CLOSE_ON_FREE | LEV_OPT_THREADSAFE);
+	bufferevent_setcb(m_pBufferEvent, conn_readcb, conn_writecb, conn_eventcb, this);
+	bufferevent_enable(m_pBufferEvent, EV_WRITE | EV_READ);
+
+	evutil_socket_t fd = bufferevent_getfd(m_pBufferEvent);
+	if (fd < 0)
+	{
+		//该bufferevent还没有设置fd
+		fd = socket(sin.sin_family, SOCK_STREAM, 0);
+		//evutil_make_socket_nonblocking(fd); //设置为非阻塞
+		int n = evutil_make_listen_socket_reuseable(fd);
+		tool.Log(_T("CRemoteClient::OnConnectPeerResult evutil_make_listen_socket_reuseable n:%d"), n);
+	}
+	sockaddr_in clientAddr;
+	clientAddr.sin_family = AF_INET;
+	clientAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	clientAddr.sin_port = port;
+	if (bind(fd, (SOCKADDR*)&clientAddr, sizeof(clientAddr)) == SOCKET_ERROR)
+	{
+		tool.Log(_T("bind failed. lasterror:%d"), ::WSAGetLastError());
+		event_base_loopexit(m_pEventBase, NULL);
+		return;
+	}
+	bufferevent_setfd(m_pBufferEvent, fd);
+	if (bufferevent_socket_connect(m_pBufferEvent, (struct sockaddr*)&sin, sizeof(sin)) == 0)
+	{
+		m_pAsynSendCommandEvent = event_new(m_pEventBase, -1, EV_SIGNAL | EV_PERSIST, OnAsynSendCommand, this);
+		tool.Log(_T("connect success. m_pAsynSendCommandEvent:0x%08X"), m_pAsynSendCommandEvent);
+		std::string strData;
+		strData += "POST /c HTTP/1.1\r\n";
+		strData += "Content-Length: 3\r\n";
+		strData += "Host: 150759bc.nat123.cc\r\n";
+		strData += "User-Agent: RemoteClient\r\n";
+		strData += "Content-Type: text/plain\r\n";
+		strData += "Connection: Keep-Alive\r\n";
+		strData += "\r\n";
+		strData += "c=g";
+		int n = bufferevent_write(m_pBufferEvent, strData.c_str(), strData.length());
+		tool.Log(_T("bufferevent_write n=%d"), n);
+	}
+	*/
 }

@@ -26,7 +26,7 @@ HWND CMainWindow::Create(CRect& rcBound, int nCmdShow)
 
 	CWindowImpl<CMainWindow>::Create(GetDesktopWindow(), rcBound, NULL, dwStyle, dwStyleEx);
 	ShowWindow(nCmdShow);
-	m_server.Start(this);
+	m_RemoteServer.Start(this);
 	return m_hWnd;
 }
 
@@ -61,12 +61,12 @@ LRESULT CMainWindow::OnCreate(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*
 LRESULT CMainWindow::OnDestroy(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/)
 {
 	tool.Log(_T("CMainWindow::OnDestroy"));
+	m_RemoteServer.Stop();
 	if (m_spScreenBitmap)
 	{
 		m_spScreenBitmap->StopCapture();
 		m_spScreenBitmap.Release();
 	}
-	m_server.Stop();
 	PostQuitMessage(0);
 	return 0;
 }
@@ -108,11 +108,12 @@ LRESULT CMainWindow::OnPaint(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/
 
 void CMainWindow::OnStart()
 {
+	tool.Log(_T("CMainWindow::OnStart"));
 }
 
 void CMainWindow::OnStop()
 {
-	
+	tool.Log(_T("CMainWindow::OnStop"));
 }
 
 void CMainWindow::OnConnect(CClientConnection* pClientConnection)
@@ -128,7 +129,7 @@ void CMainWindow::OnConnect(CClientConnection* pClientConnection)
 void CMainWindow::OnDisconnect(CClientConnection* pClientConnection, RD_ERROR_CODE errorCode)
 {
 	tool.Log(_T("CMainWindow::OnDisconnect pClientConnection:0x%08X, errorCode:0x%08X"), pClientConnection, errorCode);
-	if (!m_server.HasClientConnected() && m_spScreenBitmap->IsCapturing())
+	if (!m_RemoteServer.HasClientConnected() && m_spScreenBitmap->IsCapturing())
 	{
 		// 已经没有客户端连接了，可以停止截屏
 		m_spScreenBitmap->StopCapture();
@@ -137,17 +138,17 @@ void CMainWindow::OnDisconnect(CClientConnection* pClientConnection, RD_ERROR_CO
 void CMainWindow::OnFirstBitmap(BitmapInfo* pBitmapInfo, WORD wPixelBytes, unsigned char *bitmapBits)
 {
 	tool.Log(_T("CMainWindow::OnFirstBitmap width:%d, height:%d, wPixelBytes:%d"), pBitmapInfo->bmiHeader.biWidth, pBitmapInfo->bmiHeader.biHeight, wPixelBytes);
-	if (!m_server.HasClientConnected())
+	if (!m_RemoteServer.HasClientConnected())
 		return;
 
-	m_server.OnScreenFirstBitmap(pBitmapInfo, wPixelBytes, bitmapBits);
+	m_RemoteServer.OnScreenFirstBitmap(pBitmapInfo, wPixelBytes, bitmapBits);
 }
 
 void CMainWindow::OnModified(unsigned int nModifiedBlockCount, unsigned int* pnModifiedBlocks)
 {
 	tool.Log(_T("CMainWindow::OnModified nModifiedBlockCount:%d"), nModifiedBlockCount);
-	if (!m_server.HasClientConnected())
+	if (!m_RemoteServer.HasClientConnected())
 		return;
 
-	m_server.OnScreenModified(nModifiedBlockCount, pnModifiedBlocks);
+	m_RemoteServer.OnScreenModified(nModifiedBlockCount, pnModifiedBlocks);
 }
